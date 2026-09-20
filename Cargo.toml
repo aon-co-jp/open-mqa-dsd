@@ -1,0 +1,15 @@
+[package]
+name = "open-mqa-dsd"
+version = "0.1.0"
+edition = "2021"
+description = "open-mqa-dsd: open-source DSD (DSF/DSDIFF) reader, DSD->PCM decimator and DoP packing; DSD companion of open-mqa (not MQA-compatible)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/aon-co-jp/open-mqa-dsd"
+
+[lib]
+name = "open_mqa_dsd"
+path = "src/lib.rs"
+
+[dependencies]
+open-mqa = { git = "https://github.com/aon-co-jp/open-mqa", rev = "2d94ada", default-features = false }
+thiserror = "1"
