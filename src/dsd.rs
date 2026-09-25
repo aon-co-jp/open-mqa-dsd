@@ -203,47 +203,69 @@ impl DsdToPcm {
     }
 }
 
+/// DSD→PCM間引きフィルタ(係数表を一度だけ作り、任意の出力範囲を計算できる。逐次再生・シークに使う)。
+pub struct Decimator {
+    r: usize,
+    half: usize,
+    table: Vec<[f32; 256]>,
+}
+
+impl Decimator {
+    pub fn new(dsd_rate_hz: u32, cfg: DsdToPcm) -> Result<Decimator, DsdError> {
+        if cfg.out_rate_hz == 0 || dsd_rate_hz % cfg.out_rate_hz != 0 {
+            return Err(DsdError::Unsupported(format!("出力{}HzはDSD{}Hzを割り切れません", cfg.out_rate_hz, dsd_rate_hz)));
+        }
+        let r = (dsd_rate_hz / cfg.out_rate_hz) as usize;
+        if r % 8 != 0 {
+            return Err(DsdError::Unsupported(format!("間引き率{r}は8の倍数である必要があります")));
+        }
+        let taps = ((r * 12).max(256) + 15) / 16 * 16;
+        let fc = (cfg.cutoff_hz.min(cfg.out_rate_hz as f64 * 0.45)) / dsd_rate_hz as f64;
+        let h = design_lowpass(taps, fc, 9.0);
+        let groups = taps / 8;
+        // table[g][byte] = Σ h[8g+i] * (bit_i ? +1 : -1)、bit_iはMSBから数えてi番目
+        let mut table = vec![[0f32; 256]; groups];
+        for (g, t) in table.iter_mut().enumerate() {
+            for (byte, slot) in t.iter_mut().enumerate() {
+                let mut s = 0.0;
+                for i in 0..8 {
+                    s += if (byte >> (7 - i)) & 1 == 1 { h[8 * g + i] } else { -h[8 * g + i] };
+                }
+                *slot = s as f32;
+            }
+        }
+        Ok(Decimator { r, half: taps / 2, table })
+    }
+
+    /// `bits`(1チャンネル分)から出力フレーム`[first, first+count)`を計算して`out`へ追加する(範囲外の入力は0扱い)。
+    pub fn process_range(&self, bits: &[u8], first: usize, count: usize, out: &mut Vec<f32>) {
+        for n in first..first + count {
+            // 窓の先頭ビット位置(=n*r - half)は常にバイト境界
+            let start = (n * self.r) as isize - self.half as isize;
+            let mut acc = 0f32;
+            for (g, t) in self.table.iter().enumerate() {
+                let bit = start + (g * 8) as isize;
+                if bit < 0 || (bit as usize) / 8 >= bits.len() {
+                    continue;
+                }
+                acc += t[bits[(bit / 8) as usize] as usize];
+            }
+            out.push(acc);
+        }
+    }
+
+    /// 入力ビット列全体から得られる出力フレーム数。
+    pub fn output_len(&self, bits: &[u8]) -> usize {
+        bits.len() * 8 / self.r
+    }
+}
+
 /// 1チャンネルのDSDをPCM(f32、±1.0が±100%変調)へ変換する。
 pub fn decimate_channel(bits: &[u8], dsd_rate_hz: u32, cfg: DsdToPcm) -> Result<Vec<f32>, DsdError> {
-    if cfg.out_rate_hz == 0 || dsd_rate_hz % cfg.out_rate_hz != 0 {
-        return Err(DsdError::Unsupported(format!("出力{}HzはDSD{}Hzを割り切れません", cfg.out_rate_hz, dsd_rate_hz)));
-    }
-    let r = (dsd_rate_hz / cfg.out_rate_hz) as usize;
-    if r % 8 != 0 {
-        return Err(DsdError::Unsupported(format!("間引き率{r}は8の倍数である必要があります")));
-    }
-    let taps = ((r * 12).max(256) + 15) / 16 * 16;
-    let fc = (cfg.cutoff_hz.min(cfg.out_rate_hz as f64 * 0.45)) / dsd_rate_hz as f64;
-    let h = design_lowpass(taps, fc, 9.0);
-    let groups = taps / 8;
-    // table[g][byte] = Σ h[8g+i] * (bit_i ? +1 : -1)、bit_iはMSBから数えてi番目
-    let mut table = vec![[0f32; 256]; groups];
-    for (g, t) in table.iter_mut().enumerate() {
-        for (byte, slot) in t.iter_mut().enumerate() {
-            let mut s = 0.0;
-            for i in 0..8 {
-                s += if (byte >> (7 - i)) & 1 == 1 { h[8 * g + i] } else { -h[8 * g + i] };
-            }
-            *slot = s as f32;
-        }
-    }
-    let total_bits = bits.len() * 8;
-    let out_len = total_bits / r;
-    let half = taps / 2; // 8の倍数
-    let mut out = Vec::with_capacity(out_len);
-    for n in 0..out_len {
-        // 窓の先頭ビット位置(=n*r - half)は常にバイト境界
-        let start = (n * r) as isize - half as isize;
-        let mut acc = 0f32;
-        for (g, t) in table.iter().enumerate() {
-            let bit = start + (g * 8) as isize;
-            if bit < 0 || (bit as usize) / 8 >= bits.len() {
-                continue; // 範囲外は0扱い
-            }
-            acc += t[bits[(bit / 8) as usize] as usize];
-        }
-        out.push(acc);
-    }
+    let d = Decimator::new(dsd_rate_hz, cfg)?;
+    let n = d.output_len(bits);
+    let mut out = Vec::with_capacity(n);
+    d.process_range(bits, 0, n, &mut out);
     Ok(out)
 }
 
@@ -320,6 +342,23 @@ mod tests {
         let mid = &pcm[2000..pcm.len() - 2000];
         let a = tone_amplitude(mid, 176_400, 1000.0);
         assert!((a - 0.5).abs() < 0.02, "1kHz振幅が0.5のはず: {a}");
+    }
+
+    #[test]
+    fn range_processing_matches_full_decimation_exactly_for_any_split() {
+        let bits = modulate_sine(1500.0, 0.4, 2_822_400, 0.05);
+        let cfg = DsdToPcm::default_for(2_822_400);
+        let full = decimate_channel(&bits, 2_822_400, cfg).unwrap();
+        let d = Decimator::new(2_822_400, cfg).unwrap();
+        let mut parts = Vec::new();
+        let mut at = 0;
+        for size in [1usize, 7, 300, 2048, 5000] {
+            let n = size.min(full.len() - at);
+            d.process_range(&bits, at, n, &mut parts);
+            at += n;
+        }
+        d.process_range(&bits, at, full.len() - at, &mut parts);
+        assert_eq!(parts, full, "任意の分割で全体変換とビット単位で一致(シーク・逐次再生の前提)");
     }
 
     #[test]
