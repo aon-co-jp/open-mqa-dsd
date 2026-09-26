@@ -1,0 +1,27 @@
+{
+  "format": "open-mqa-dsd",
+  "version": "0.1",
+  "title": "Album track (example, audio only)",
+  "audio_tracks": [
+    {
+      "id": "dsd-main",
+      "kind": "dsd",
+      "role": "main",
+      "rate_hz": 11289600,
+      "channels": 2,
+      "layout": "stereo",
+      "title": "DSD256 stereo (main)",
+      "file": "track.dsd256.dsf"
+    },
+    {
+      "id": "fallback",
+      "kind": "pcm",
+      "role": "fallback",
+      "rate_hz": 44100,
+      "channels": 2,
+      "layout": "stereo",
+      "title": "FLAC for players without native support",
+      "stream_index": 0
+    }
+  ]
+}

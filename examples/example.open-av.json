@@ -1,0 +1,52 @@
+{
+  "format": "open-av",
+  "version": "0.1",
+  "title": "Live concert (example)",
+  "audio_tracks": [
+    {
+      "id": "dsd-main",
+      "kind": "dsd",
+      "role": "main",
+      "rate_hz": 11289600,
+      "channels": 2,
+      "layout": "stereo",
+      "language": "jpn",
+      "title": "DSD256 stereo (main)",
+      "file": "concert.dsd256.dsf"
+    },
+    {
+      "id": "fallback",
+      "kind": "pcm",
+      "role": "fallback",
+      "rate_hz": 48000,
+      "channels": 2,
+      "layout": "stereo",
+      "title": "Fallback for players without open-av support",
+      "stream_index": 0
+    },
+    {
+      "id": "immersive",
+      "kind": "dsd",
+      "role": "alternate",
+      "rate_hz": 5644800,
+      "channels": 10,
+      "layout": "9.1-height",
+      "title": "DSD128 immersive (5.1 + 4 height channels)",
+      "file": "concert.immersive.dsf"
+    },
+    {
+      "id": "mqa-passthrough",
+      "kind": "opaque",
+      "role": "alternate",
+      "rate_hz": 44100,
+      "channels": 2,
+      "layout": "stereo",
+      "codec": "mqa-flac",
+      "decode": "none",
+      "title": "MQA stream carried untouched",
+      "note": "Not decoded by open-av. Play through an MQA-capable DAC with a bit-perfect path.",
+      "file": "concert.mqa.flac"
+    }
+  ],
+  "sync": { "audio_offset_ms": 0 }
+}
