@@ -1,3 +1,3 @@
 source: aon-co-jp/open-mqa-dsd
-commit: 0ee70e18b88e14b4a5fb255a9ef9fb41189a324d
-updated: 2026-11-27T06:01:56Z
+commit: e33b2fd41b3e706b2c3739c14b6357c84bfe7cb7
+updated: 2026-11-27T06:03:34Z
